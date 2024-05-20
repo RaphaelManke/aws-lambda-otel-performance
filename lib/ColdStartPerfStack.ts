@@ -16,13 +16,26 @@ export class ColdStartPerfStack extends cdk.Stack {
       billing: Billing.onDemand(),
     });
 
+    const testFunctionGroup = new cdk.aws_logs.LogGroup(
+      this,
+      "TestFunctionLogGroup",
+      {}
+    );
+
     const functionToTest = new NodejsFunction(this, "Function", {
       functionName: "otel-base-lambda",
       entry: "lib/lambda/base/handler.ts",
       loggingFormat: LoggingFormat.JSON,
+      logGroup: testFunctionGroup,
+    });
+    const anotherFunctionToTest = new NodejsFunction(this, "AnotherFunction", {
+      functionName: "otel-base-lambda-another",
+      entry: "lib/lambda/base/handler.ts",
+      loggingFormat: LoggingFormat.JSON,
+      logGroup: testFunctionGroup,
     });
 
-    const functionsToTest = [functionToTest];
+    const functionsToTest = [functionToTest, anotherFunctionToTest];
 
     functionsToTest.forEach((fn) => {
       fn.addEnvironment("TABLE_NAME", dummyDatabase.tableName);
