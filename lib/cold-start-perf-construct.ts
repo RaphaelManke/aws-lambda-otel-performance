@@ -1,0 +1,134 @@
+import * as cdk from "aws-cdk-lib";
+import { PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import * as sfn from "aws-cdk-lib/aws-stepfunctions";
+import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
+import { Construct } from "constructs";
+
+export interface ColdStartPerfConstructProps {
+  lambdaFunctions: lambda.Function[];
+  tableName: string;
+}
+
+/**
+ * A construct that creates a Step Functions state machine that invokes a list of Lambda functions.
+ */
+export class ColdStartPerfConstruct extends Construct {
+  constructor(
+    scope: Construct,
+    id: string,
+    props: ColdStartPerfConstructProps
+  ) {
+    super(scope, id);
+
+    const logParserLambdaFunction = new NodejsFunction(
+      this,
+      "LogParserLambdaFunction",
+      {
+        entry: "lib/lambda/log-parser-handler.ts",
+        runtime: lambda.Runtime.NODEJS_20_X,
+      }
+    );
+
+    const fanOut = new sfn.Parallel(this, "All jobs");
+    for (const lambdaFunction of props.lambdaFunctions) {
+      fanOut.branch(
+        new PerformanceTest(this, "PerformanceTest", {
+          functionToTest: lambdaFunction,
+          logParser: logParserLambdaFunction,
+          tableName: props.tableName,
+        }).chain
+      );
+    }
+
+    const stateMachine = new sfn.StateMachine(
+      this,
+      "ColdStartPerfStateMachine",
+      {
+        definition: fanOut,
+      }
+    );
+
+    stateMachine.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: props.lambdaFunctions.map((fn) => fn.functionArn),
+      })
+    );
+  }
+}
+
+class PerformanceTest extends Construct {
+  public readonly chain: sfn.Chain;
+  constructor(
+    scope: Construct,
+    id: string,
+    props: {
+      functionToTest: lambda.Function;
+      logParser: lambda.Function;
+      tableName: string;
+    }
+  ) {
+    super(scope, id);
+    const { functionToTest, logParser } = props;
+    this.chain = this.updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
+      functionToTest,
+      props.tableName
+    )
+      .next(this.waitForMs(1_000))
+      .next(this.invokeLambdaFunction(functionToTest))
+      .next(this.parseLogs(logParser));
+  }
+  updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
+    lambdaFunction: lambda.Function,
+    tableName: string
+  ): tasks.CallAwsService {
+    // make a AWS SDK call to update the Lambda function environment variable
+    return new tasks.CallAwsService(this, "UpdateEnvVars", {
+      service: "lambda",
+      action: "updateFunctionConfiguration",
+      parameters: {
+        FunctionName: lambdaFunction.functionName,
+        Environment: {
+          Variables: {
+            // "startTime.$": "$$.Execution.StartTime",
+            "TIMESTAMP.$": "$$.Execution.StartTime",
+            TABLE_NAME: tableName,
+          },
+        },
+      },
+      iamResources: [lambdaFunction.functionArn],
+    });
+  }
+
+  waitForMs(ms: number): sfn.Wait {
+    return new sfn.Wait(this, "Wait", {
+      time: sfn.WaitTime.duration(cdk.Duration.millis(ms)),
+    });
+  }
+
+  invokeLambdaFunction(lambdaFunction: lambda.Function) {
+    const step = new tasks.CallAwsService(this, "InvokeLambdaFunction", {
+      service: "lambda",
+      action: "invoke",
+      parameters: {
+        FunctionName: lambdaFunction.functionName,
+        Payload: {},
+        LogType: "Tail",
+      },
+      iamResources: [lambdaFunction.functionArn],
+    });
+    return step;
+  }
+
+  parseLogs(parseLogsLambdaFunction: lambda.Function) {
+    const task = new tasks.LambdaInvoke(this, "ParseLogs", {
+      lambdaFunction: parseLogsLambdaFunction,
+      payload: sfn.TaskInput.fromObject({
+        LogResult: sfn.JsonPath.stringAt("$.LogResult"),
+      }),
+    });
+    return task;
+  }
+}
