@@ -56,7 +56,14 @@ export const handler = (event: Event) => {
      */
   const parsedLogResult = Buffer.from(event.LogResult, "base64").toString();
   const logLines = parsedLogResult.split("\n");
-  const logStatements = logLines.map((line) => JSON.parse(line));
+  const logStatements = logLines.map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch (e) {
+
+      return { type: "unknown", message: line };
+    };
+  })
 
   const initReport: InitReportLog = logStatements.find(
     (statement) => statement.type === "platform.initStart"

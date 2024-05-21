@@ -28,6 +28,12 @@ export class ColdStartPerfConstruct extends Construct {
       {
         entry: "lib/lambda/log-parser-handler.ts",
         runtime: lambda.Runtime.NODEJS_20_X,
+        bundling: {
+          sourceMap: true,
+        },
+        environment: {
+          NODE_OPTIONS: "--enable-source-maps",
+        }
       }
     );
 
@@ -76,17 +82,20 @@ class PerformanceTest extends Construct {
     super(scope, id);
     const { functionToTest, logParser } = props;
     this.idSuffix = id;
-    this.chain = this.updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
-      functionToTest,
-      props.tableName
-    )
-      .next(this.waitForMs(1_000))
-      .next(this.invokeLambdaFunction(functionToTest))
-      .next(this.parseLogs(logParser));
+    this.chain =
+
+      this.updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
+        functionToTest,
+        props.tableName
+      )
+        .next(this.waitForMs(1_000))
+        .next(this.invokeLambdaFunction(functionToTest))
+    // .next(this.parseLogs(logParser));
   }
   uniqueId = (id: string) => {
     return `${id}-${this.idSuffix}`;
   };
+
   updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
     lambdaFunction: lambda.Function,
     tableName: string
@@ -95,15 +104,11 @@ class PerformanceTest extends Construct {
     return new tasks.CallAwsService(this, this.uniqueId("UpdateEnvVars"), {
       service: "lambda",
       action: "updateFunctionConfiguration",
+
       parameters: {
         FunctionName: lambdaFunction.functionName,
-        Environment: {
-          Variables: {
-            // "startTime.$": "$$.Execution.StartTime",
-            "TIMESTAMP.$": "$$.Execution.StartTime",
-            TABLE_NAME: tableName,
-          },
-        },
+        "Description.$": "$$.Execution.StartTime",
+
       },
       iamResources: [lambdaFunction.functionArn],
     });

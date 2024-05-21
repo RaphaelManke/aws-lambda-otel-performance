@@ -4,6 +4,8 @@ import { Construct } from "constructs";
 import { ColdStartPerfConstruct } from "./cold-start-perf-construct";
 import { LoggingFormat } from "aws-cdk-lib/aws-lambda";
 import { Billing, TableV2 } from "aws-cdk-lib/aws-dynamodb";
+import { BaseFunction } from "./BaseFunction";
+import { AdotFunction } from "./lambda/adot/infra";
 
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 export class ColdStartPerfStack extends cdk.Stack {
@@ -16,26 +18,16 @@ export class ColdStartPerfStack extends cdk.Stack {
       billing: Billing.onDemand(),
     });
 
-    const testFunctionGroup = new cdk.aws_logs.LogGroup(
-      this,
-      "TestFunctionLogGroup",
-      {}
-    );
-
-    const functionToTest = new NodejsFunction(this, "Function", {
-      functionName: "otel-base-lambda",
+    const functionToTest = new BaseFunction(this, "Function", {
+      functionName: "otel-base",
       entry: "lib/lambda/base/handler.ts",
-      loggingFormat: LoggingFormat.JSON,
-      logGroup: testFunctionGroup,
-    });
-    const anotherFunctionToTest = new NodejsFunction(this, "AnotherFunction", {
-      functionName: "otel-base-lambda-another",
-      entry: "lib/lambda/base/handler.ts",
-      loggingFormat: LoggingFormat.JSON,
-      logGroup: testFunctionGroup,
-    });
+    }).function;
+    const adotFunctionToTest = new AdotFunction(this, "AdotFunction").function;
 
-    const functionsToTest = [functionToTest, anotherFunctionToTest];
+    const functionsToTest: NodejsFunction[] = [
+      functionToTest,
+      adotFunctionToTest
+    ];
 
     functionsToTest.forEach((fn) => {
       fn.addEnvironment("TABLE_NAME", dummyDatabase.tableName);
