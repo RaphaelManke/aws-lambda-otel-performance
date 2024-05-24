@@ -15,7 +15,7 @@ query-string:
 ```
 fields @timestamp, @message, @logStream, @log, record.metrics.memorySizeMB as memorySizeMB, record.metrics.initDurationMs as initDurationMs, record.metrics.durationMs as durationMs
 | filter type== "platform.report"
-| parse @log "906407660701:/aws/lambda/*" as functionName
+| parse @log "xxxxxxx:/aws/lambda/*" as functionName
 
 | stats avg(initDurationMs) as avgInitDurationMs, min(initDurationMs) as minInitDurationMs, max(initDurationMs) as maxInitDurationMs, pct(initDurationMs, 50) as p50InitDurationMs, pct(initDurationMs, 90) as p90InitDurationMs, pct(initDurationMs, 99) as p99InitDurationMs by memorySizeMB,functionName
 | sort functionName
