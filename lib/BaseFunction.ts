@@ -1,5 +1,5 @@
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
-import { LoggingFormat, Runtime } from "aws-cdk-lib/aws-lambda";
+import { LoggingFormat, Runtime, Tracing } from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction, NodejsFunctionProps } from "aws-cdk-lib/aws-lambda-nodejs";
 import { ILogGroup, LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
@@ -13,7 +13,7 @@ export class BaseFunction extends Construct {
     constructor(scope: Construct, id: string, props: BaseFunctionProps) {
         super(scope, id);
         const testFunctionGroup = new LogGroup(
-            scope,
+            this,
             "FunctionLogGroup",
 
             {
@@ -28,6 +28,7 @@ export class BaseFunction extends Construct {
             runtime: Runtime.NODEJS_20_X,
             timeout: Duration.seconds(30),
             logFormat: LoggingFormat.JSON,
+            tracing: Tracing.ACTIVE,
         });
     }
 }

@@ -86,10 +86,14 @@ class PerformanceTest extends Construct {
 
       this.updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
         functionToTest,
-        props.tableName
       )
-        .next(this.waitForMs(1_000))
-        .next(this.invokeLambdaFunction(functionToTest))
+        .next(this.waitForMs(1_000, `WaitForEnvVarUpdate-${functionToTest.functionName}`))
+        .next(this.updateLambdaFunctionMemoryConfigTo(functionToTest, 128))
+        .next(this.waitForMs(1_000, `WaitForMemoryUpdateTo128-${functionToTest.functionName}`))
+        .next(this.invokeLambdaFunction(functionToTest, "InvokeLambdaFunctionAfterEnvVarUpdate"))
+        .next(this.updateLambdaFunctionMemoryConfigTo(functionToTest, 1024))
+        .next(this.waitForMs(1_000, `WaitForMemoryUpdate1024-${functionToTest.functionName}`))
+        .next(this.invokeLambdaFunction(functionToTest, "InvokeLambdaFunctionAfterMemoryUpdate"))
     // .next(this.parseLogs(logParser));
   }
   uniqueId = (id: string) => {
@@ -98,7 +102,6 @@ class PerformanceTest extends Construct {
 
   updateLambdaFunctionEnvironmentVariableToCurrentTimestamp(
     lambdaFunction: lambda.Function,
-    tableName: string
   ): tasks.CallAwsService {
     // make a AWS SDK call to update the Lambda function environment variable
     return new tasks.CallAwsService(this, this.uniqueId("UpdateEnvVars"), {
@@ -114,17 +117,38 @@ class PerformanceTest extends Construct {
     });
   }
 
-  waitForMs(ms: number): sfn.Wait {
-    return new sfn.Wait(this, this.uniqueId("Wait"), {
+  updateLambdaFunctionMemoryConfigTo(
+    lambdaFunction: lambda.Function,
+    memorySize: number
+  ): tasks.CallAwsService {
+    // make a AWS SDK call to update the Lambda function environment variable
+    return new tasks.CallAwsService(this, this.uniqueId(`SetMemoryTo${memorySize}`), {
+      service: "lambda",
+      action: "updateFunctionConfiguration",
+      stateName: `SetMemoryTo${memorySize}-${lambdaFunction.functionName}`,
+
+      parameters: {
+        FunctionName: lambdaFunction.functionName,
+        "MemorySize": memorySize,
+
+      },
+      iamResources: [lambdaFunction.functionArn],
+    });
+  }
+
+  waitForMs(ms: number, id: string): sfn.Wait {
+    return new sfn.Wait(this, this.uniqueId("Wait" + id), {
+      stateName: `Wait ${ms}ms - ${id}`,
       time: sfn.WaitTime.duration(cdk.Duration.millis(ms)),
     });
   }
 
-  invokeLambdaFunction(lambdaFunction: lambda.Function) {
+  invokeLambdaFunction(lambdaFunction: lambda.Function, id: string) {
     const step = new tasks.CallAwsService(
       this,
-      this.uniqueId("InvokeLambdaFunction"),
+      this.uniqueId("InvokeLambdaFunction" + id),
       {
+        stateName: `Invoke ${lambdaFunction.functionName} - ${id}`,
         service: "lambda",
         action: "invoke",
         parameters: {
